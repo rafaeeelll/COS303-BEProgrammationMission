@@ -83,30 +83,30 @@ public class PatriusTuto {
 
 		// Create an AbsoluteDate from the date "2025-07-21T10:23:00" (ISO-8601
 		// standard), in the UTC Timescale
-		final String dateString = // your code here
-		final AbsoluteDate dateUtc = // your code here
+		final String dateString = "2025-07-21T10:23:00";
+		final AbsoluteDate dateUtc = new AbsoluteDate(dateString, utc);
 
 		// Print your date using toString(), default toString() uses TAI Timescale
-		System.out.println("Date (TAI) : " + // your code here );
+		System.out.println("Date (TAI) : " + dateUtc.toString() );
 
 		// Now print your date in the UTC Timescale using toString(utc), you should see
 		// the difference
-		System.out.println("Date (UTC) : " + // your code here );
+		System.out.println("Date (UTC) : " + dateUtc.toString(utc));
 
 		// Now create a date 10 seconds after your date, using your date and the
 		// AbsoluteDate methods, and print it.
-		final AbsoluteDate shiftedDate = // your code here
-		System.out.println("Shifted date (UTC) : " + // your code here
+		final AbsoluteDate shiftedDate = dateUtc.shiftedBy(10.0);
+		System.out.println("Shifted date (UTC) : " + shiftedDate.toString(utc));
 
 		// Print the duration between the to dates
 		// Use AbsoluteDate methods to compute this duration
-		System.out.println("Shifted date duration from date : " + // your code here
+		System.out.println("Shifted date duration from date : " + shiftedDate.durationFrom(dateUtc));
 
 		// Create an AbsoluteDateInterval using both dates
-		final AbsoluteDateInterval interval = // your code here
+		final AbsoluteDateInterval interval = new AbsoluteDateInterval(dateUtc, shiftedDate);
 
 		// Check if your date is in the interval using AbsoluteDateInterval methods
-		System.out.println("Is date in interval ? " + // your code here
+		System.out.println("Is date in interval ? " + interval.contains(dateUtc));
 
 		// You can explore further using the AbsoluteDate constructors and method and
 		// other associated classes methods
@@ -121,8 +121,8 @@ public class PatriusTuto {
 	private static void tuto2Frames() throws PatriusException {
 		// First, create the "2000-01-01T00:00:00.000" date in UTC TimeScale
 		// We will use this date later
-		final TimeScale utc = // your code here
-		final AbsoluteDate date = // your code here
+		final TimeScale utc = TimeScalesFactory.getUTC();
+		final AbsoluteDate date = new AbsoluteDate("2000-01-01T00:00:00.000", utc);
 
 		// Then you are going to create the Earth model and its ITRF attached Frame
 		// Simplified Earth constants, will be used to create the Earth model
@@ -130,14 +130,14 @@ public class PatriusTuto {
 		final double f = 0;
 
 		// Get the ITRF Frame that will be used for the Earth attached Frame using FramesFactory
-		final Frame itrf = // your code here
+		final Frame itrf = FramesFactory.getITRF();
 
 		// Check if the ITRF Frame is inertial using Frames methods
-		System.out.println("Is ITRF pseudo-inertial ? " + // your code here
+		System.out.println("Is ITRF pseudo-inertial ? " + itrf.isPseudoInertial());
 
 		// Create the Earth shape using the ExtendedOneAxisEllipsoid object and the
 		// previous objects
-		final ExtendedOneAxisEllipsoid earth = // your code here
+		final ExtendedOneAxisEllipsoid earth = new ExtendedOneAxisEllipsoid(ae, f, itrf, "Earth");
 
 		// Now you are going to create the geodetic point of Toulouse at the surface of
 		// the Earth
@@ -146,47 +146,47 @@ public class PatriusTuto {
 		// 1.450° and altitude is 200m.
 		// Careful : angles must be converted to radians, you can use
 		// FastMath.toRadians(angle)
-		final double lat = // your code here
-		final double lon = // your code here
-		final double alt = // your code here
+		final double lat = FastMath.toRadians(43.617);
+		final double lon = FastMath.toRadians(1.450);
+		final double alt = 200.0;
 
 		// Now, create Toulouse as a GeodeticPoint object
-		final GeodeticPoint tls = // your code here
+		final GeodeticPoint tls = new GeodeticPoint(lat, lon, alt);
 
 		// Create a TopocentricFrame using the GeodeticPoint of Toulouse
-		final TopocentricFrame tlsFrame = // your code here
+		final TopocentricFrame tlsFrame = new TopocentricFrame(earth, tls, "Toulouse");
 
 		// Now you have a Toulouse model in ITRF, we are going to compare its
 		// coordinates in ITRF to the coordinates in EME2000 Frame
 
 		// Get the EME2000 frame using FramesFactory
-		final Frame eme2000 = // your code here
+		final Frame eme2000 = FramesFactory.getEME2000();
 
 		// Check if the ITRF Frame is inertial
-		System.out.println("Is EME200 pseudo-inertial ? " + // your code here
+		System.out.println("Is EME200 pseudo-inertial ? " + eme2000.isPseudoInertial());
 
 		// Get the PV coordinates of the Toulouse frame in the EME2000 frame at the
 		// created date. Use the fact that tlsFrame is a TopocentricFrame and thus is also 
 		// a PVCoordinatesProvider
 		// Don't forget to provide the target Frame when getting PVCoordinates 
-		final PVCoordinates pvEme2000 = // your code here
+		final PVCoordinates pvEme2000 = tlsFrame.getPVCoordinates(date, eme2000);
 
 		// Compute the speed's norm using methods on the PVCoordinates object 
-		final double velEme2000 = // your code here
+		final double velEme2000 = pvEme2000.getVelocity().getNorm();
 
 		// Print the coordinates and speed in EME2000
 		System.out.println("Toulouse complete coordinates vetor (EME2000): " + pvEme2000.toString());
 		System.out.println("Toulouse velocity norm (EME2000): " + velEme2000);
 
 		// Calculate the expected speed using the Earth rotational rate and basic geometry
-		final double exp = // your code here
+		final double exp = Constants.WGS84_EARTH_ANGULAR_VELOCITY * (ae + alt) * FastMath.cos(lat);
 		System.out.println("Expected velocity from analytical calculation : " + exp);
 
 		// Now get Toulouse's PVCoordinates in the ITRF frame
-		final PVCoordinates pvItrf = // your code here
+		final PVCoordinates pvItrf = tlsFrame.getPVCoordinates(date, itrf);
 
 		// Get the computed velocity
-		final Vector3D velItrf = // your code here
+		final Vector3D velItrf = pvItrf.getVelocity();
 
 		// Print the coordinates and velocity in ITRF
 		System.out.println("Toulouse complete coordinates vetor (ITRF): " + pvItrf.toString());
@@ -219,44 +219,46 @@ public class PatriusTuto {
 
 		// Initial date of the orbit propagation : create an AbsoluDate in TAI TimeScale
 		// representing the date "2000-01-01T06:00:00.000"
-		final AbsoluteDate initialDate = // your code here);
+		final TimeScale tai = TimeScalesFactory.getTAI();
+		final AbsoluteDate initialDate = new AbsoluteDate("2000-01-01T06:00:00.000", tai);
 
 		// Get the EME2000 Reference frame
-		final Frame eme2000 = // your code here);
+		final Frame eme2000 = FramesFactory.getEME2000();
 
 		// Create a KeplerianOrbit object at initial date using all the previously built
 		// objects and variables (see KeplerianOrbit constructors)
-		final KeplerianOrbit initialOrbit = // your code here);
+		final KeplerianOrbit initialOrbit = new KeplerianOrbit(a, e, i, pa, raan, w,
+				PositionAngle.TRUE, eme2000, initialDate, mu);
 
 		// Get the orbital period and print it
-		final double orbitalPeriod = // your code here);
+		final double orbitalPeriod = initialOrbit.getKeplerianPeriod();
 		System.out.println("Orbital period [s] : " + orbitalPeriod);
 
 		// Print initial position/velocity/acceleration. use tha fact that initialOrbit is 
 		// also a PVCoordinatesProvider
-		final PVCoordinates initialPv = // your code here
+		final PVCoordinates initialPv = initialOrbit.getPVCoordinates();
 		System.out.println("Initial coordinates : " + initialPv);
 
 		// Create the final date for propagation, using a date shifted by a number of
 		// periods
 		final double numberOfPeriods = 10.0;
-		final AbsoluteDate finalDate = // your code here
+		final AbsoluteDate finalDate = initialDate.shiftedBy(orbitalPeriod * numberOfPeriods);
 
 		// Now create a KeplerianPropagator object using the initial orbit
-		final KeplerianPropagator propagator = // your code here
+		final KeplerianPropagator propagator = new KeplerianPropagator(initialOrbit);
 
 		// Propagate the orbit from the initial to the final date. Any intermediate
 		// state is not stored. Use the propagate() method of your propagator
-		final SpacecraftState result = // your code here
+		final SpacecraftState result = propagator.propagate(finalDate);
 
 		// Get the final PVCoordinates and print it
-		final PVCoordinates finalPv = // your code here
+		final PVCoordinates finalPv = result.getPVCoordinates();
 		System.out.println("Final coordinates : " + finalPv);
 
 		// Compute and print the difference between the initial and final PVCoordinates
 		// Use the methods of the Vector3D class to compare Vector3D instances
-		final Vector3D posDiff = // your code here
-		System.out.println("Difference : " + posDiff + " ; Norm of the difference : " + // your code here);
+		final Vector3D posDiff = finalPv.getPosition().subtract(initialPv.getPosition());
+		System.out.println("Difference : " + posDiff + " ; Norm of the difference : " + posDiff.getNorm());
 
 		// Try to modify numberOfPeriods and check the behavior is this number is an int
 		// or not (complete revolutions vs partial revolutions)
@@ -286,38 +288,40 @@ public class PatriusTuto {
 		final double mu = Constants.GRIM5C1_EARTH_MU;
 
 		// Create a OneAxisEllipsoid object for the Earth model
-		final OneAxisEllipsoid earth = // your code here
+		final OneAxisEllipsoid earth = new OneAxisEllipsoid(ae, f, FramesFactory.getITRF());
 
 		// Attitude law = here our target object always points the center of the Earth
 		// Create the BodyCenterGroundPointing object which is an AttitudeLaw pointing
 		// the center of the input BodyShape object
-		final BodyCenterGroundPointing law = // your code here
+		final BodyCenterGroundPointing law = new BodyCenterGroundPointing(earth);
 
 		// Create the initial Date using TAI TimeScale : "2000-01-01T06:00:00.000"
-		final AbsoluteDate initialDate = // your code here
+		final TimeScale tai = TimeScalesFactory.getTAI();
+		final AbsoluteDate initialDate = new AbsoluteDate("2000-01-01T06:00:00.000", tai);
 
 		// Reference frame (inertial)
-		final Frame eme2000 = // your code here
+		final Frame eme2000 = FramesFactory.getEME2000();
 
 		// Create the initial Orbit using the KeplerianOrbit object (see KeplerianOrbit
 		// constructors)
-		final KeplerianOrbit initialOrbit = // your code here
+		final KeplerianOrbit initialOrbit = new KeplerianOrbit(a, e, i, pa, raan, w,
+				PositionAngle.TRUE, eme2000, initialDate, mu);
 
 		// Get the orbital period and print it
-		final double orbitalPeriod = // your code here
+		final double orbitalPeriod = initialOrbit.getKeplerianPeriod();
 		System.out.println("Orbital period [s] : " + orbitalPeriod);
 
 		// Create the final date for propagation, using a date shifted by a number of
 		// periods
 		final double numberOfPeriods = 10.0;
-		final AbsoluteDate finalDate = // your code here
+		final AbsoluteDate finalDate = initialDate.shiftedBy(orbitalPeriod * numberOfPeriods);
 
 		// Create the Keplerian Propagator using both the initial Orbit and the
 		// previously created attitude law (see KeplerianPropagator constructors)
-		final KeplerianPropagator propagator = // your code here
+		final KeplerianPropagator propagator = new KeplerianPropagator(initialOrbit, law);
 
 		// Propagate from initial date to final date
-		// your code here
+		propagator.propagate(finalDate);
 
 		// Now you are going to print all the intermediate coordinates
 		// Declare local variables for printing
@@ -335,7 +339,7 @@ public class PatriusTuto {
 
 			// Getting current date's PVCoordinates using the propagator
 			// For that, propagate to the current date and get the PVCoordinates
-			pv = // your code here
+				pv = propagator.getPVCoordinates(currentDate, eme2000);
 
 			// Getting the number of seconds elapsed since initial date
 			t = currentDate.offsetFrom(initialDate, tai);
@@ -345,8 +349,8 @@ public class PatriusTuto {
 			y = pv.getPosition().getY();
 			z = pv.getPosition().getZ();
 			vx = pv.getVelocity().getX();
-			vy = pv.getVelocity().getX();
-			vz = pv.getVelocity().getX();
+			vy = pv.getVelocity().getY();
+			vz = pv.getVelocity().getZ();
 
 			// Computing the current attitude
 			// For that, use the getAttitude(final PVCoordinatesProvider pvProv,
@@ -354,7 +358,7 @@ public class PatriusTuto {
 			// AttitudeProvider (BodyCenterGroundPointing). The pvProv is the 
 			// propagator's PVCoordinatesProvider and you have to use the eme2000
 			// Frame
-			att = //your code here
+			att = propagator.getAttitudeProvider().getAttitude(propagator, currentDate, eme2000);
 
 			// Creating current date's line
 			final StringBuffer bf = new StringBuffer();
@@ -463,7 +467,7 @@ public class PatriusTuto {
 
 		// First, declare the target detection distance at 2000000m (2000km) as a double
 		// which we will use later
-		final double targetDistance = // your code here
+		final double targetDistance = 2.0e6;
 
 		// Now, create a TopocentricFrame object for Toulouse, which will serve as an
 		// instance of PVCoordinatesProvider for Toulouse, based on the GeodeticPoint
@@ -472,18 +476,20 @@ public class PatriusTuto {
 		// longitude is 1.450° and altitude is 200m.
 		// Careful : angles must be converted to radians, you can use
 		// FastMath.toRadians(angle)
-		final double latToulouse = // your code here
-		final double lonToulouse = // your code here
-		final double altToulouse = // your code here
-		final TopocentricFrame toulousePvProv = // your code here
+		final double latToulouse = FastMath.toRadians(43.617);
+		final double lonToulouse = FastMath.toRadians(1.450);
+		final double altToulouse = 200.0;
+		final TopocentricFrame toulousePvProv = new TopocentricFrame(earth,
+				new GeodeticPoint(latToulouse, lonToulouse, altToulouse), "Toulouse");
 
 		// Now you should be able to create your DistanceDetector (see constructors)
 		// Hint : the ACTION when the event is detected is to CONTINUE propagation
-		final DistanceDetector distanceDetectorToulouse = // your code here
+		final DistanceDetector distanceDetectorToulouse = new DistanceDetector(toulousePvProv,
+				targetDistance, maxcheck, treshold, Action.CONTINUE);
 
 		// Then you can add the detector to the propagator using
 		// AbstractPropagator#addEventDetector() method
-		// your code here
+		propagator.addEventDetector(distanceDetectorToulouse);
 
 		// Then you can create a GenericCodingEventDetector to log the events detected.
 		// Explore the given constructors to use the most appropriate one.
@@ -495,41 +501,45 @@ public class PatriusTuto {
 		// [start_event => end_event].
 		// Here the events are linked with the distance between the target (Toulouse) and
 		// the satellite represented by the propagator 
-		final GenericCodingEventDetector codingEventDetectorToulouse = // your code here
+		final GenericCodingEventDetector codingEventDetectorToulouse = new GenericCodingEventDetector(
+				distanceDetectorToulouse, "TOULOUSE_IN", "TOULOUSE_OUT", true, "TOULOUSE_RANGE");
 
 		// Create a CodedEventsLogger using the simple constructor
-		final CodedEventsLogger eventLoggerToulouse = // your code here
+		final CodedEventsLogger eventLoggerToulouse = new CodedEventsLogger();
 
 		// Tell this object to monitor the previously created DistanceDetector 
 		// using CodedEventsLogger#monitorDetector(),
 		// thus you should be able to get a new instance of EventDetector
 		// which will be used to log any Event linked with the DistanceDetector
-		final EventDetector eventLoggingDetectorToulouse = // your code here
+		final EventDetector eventLoggingDetectorToulouse = eventLoggerToulouse.monitorDetector(codingEventDetectorToulouse);
 
 		// Finally, add your new EventDetector to the propagator
-		// your code here
+		propagator.addEventDetector(eventLoggingDetectorToulouse);
 
 		// Create a DistanceDetector for Paris as you did with Toulouse and create the
 		// associated DistanceDetector, GenericCodingEventDetector, CodedEventsLogger
 		// and EventDetector that you will also add to the propagator
 		// Hint : Paris coordinates and altitude. Latitude is 48.86°,
 		// longitude is 2.34445° and altitude can be taken around 50m.
-		final double latParis = // your code here
-		final double lonParis = // your code here
-		final double altParis = // your code here
-		final TopocentricFrame parisPvProv = // your code here
-		final DistanceDetector distanceDetectorParis = // your code here
+		final double latParis = FastMath.toRadians(48.86);
+		final double lonParis = FastMath.toRadians(2.34445);
+		final double altParis = 50.0;
+		final TopocentricFrame parisPvProv = new TopocentricFrame(earth,
+				new GeodeticPoint(latParis, lonParis, altParis), "Paris");
+		final DistanceDetector distanceDetectorParis = new DistanceDetector(parisPvProv,
+				targetDistance, maxcheck, treshold, Action.CONTINUE);
 		// Add the detector to the propagator
-		// your code here
+		propagator.addEventDetector(distanceDetectorParis);
 		// Then create a GenericCodingEventDetector to log the events detected
-		final GenericCodingEventDetector codingEventDetectorParis = // your code here
-		final CodedEventsLogger eventLoggerParis = // your code here
-		final EventDetector eventLoggingDetectorParis = // your code here
+		final GenericCodingEventDetector codingEventDetectorParis = new GenericCodingEventDetector(
+				distanceDetectorParis, "PARIS_IN", "PARIS_OUT", true, "PARIS_RANGE");
+		final CodedEventsLogger eventLoggerParis = new CodedEventsLogger();
+		final EventDetector eventLoggingDetectorParis = eventLoggerParis.monitorDetector(codingEventDetectorParis);
 		// And add the EventDetector for logging to the propagator 
-		// your code here
+		propagator.addEventDetector(eventLoggingDetectorParis);
 
 		// Finally, you can propagate between initial and final date.
-		// your code here
+		propagator.propagate(finalDate);
 		System.out.println("Propagation interval : " + initialDate.toString() + " - " + finalDate.toString());
 
 		// Finally you can create a Timeline from all events logged during propagation
@@ -537,21 +547,23 @@ public class PatriusTuto {
 		// For that, use the appropriate Timeline constructor and your
 		// event logger (EventDetector), you can put null for the SpacecraftState and
 		// take the propagation interval for the inputs.
-		final Timeline timelineToulouse = // your code here
+		final Timeline timelineToulouse = new Timeline(eventLoggerToulouse,
+				new AbsoluteDateInterval(initialDate, finalDate), null);
 		
 		// Print the timeline using ProjectUtils#printTimeline()
 		ProjectUtils.printTimeline(timelineToulouse);
-		final Timeline timelineParis = // your code here
+		final Timeline timelineParis = new Timeline(eventLoggerParis,
+				new AbsoluteDateInterval(initialDate, finalDate), null);
 		ProjectUtils.printTimeline(timelineParis);
 
 		// Now, create a global Timeline with all events by merging one into the other
 		// Hint : you should find a method to do that among the Timeline object's
 		// methods
-		final Timeline globalTimeline = // your code here
+		final Timeline globalTimeline = new Timeline(new AbsoluteDateInterval(initialDate, finalDate));
 		// Merge Toulouse's timeline into the global Timeline
-		// your code here
+		globalTimeline.merge(timelineToulouse);
 		// Merge Paris's timeline into the global Timeline
-		// your code here
+		globalTimeline.merge(timelineParis);
 
 		// Then try to combine phenomena when both Toulouse AND Paris are in range in
 		// the global Timeline.
@@ -560,9 +572,10 @@ public class PatriusTuto {
 		// verify using the printTimeline method.
 		// Careful : the codes of the events must be the same as the ones 
 		// used previously when creating the GenericCodingEventDetector instances
-		final AndCriterion andCritetion = // your code here
+		final AndCriterion andCritetion = new AndCriterion("TOULOUSE_RANGE", "PARIS_RANGE",
+				"TOULOUSE_AND_PARIS", "Toulouse and Paris in range");
 		// Apply the AndCriterion to your Timeline 
-		// your code here
+		andCritetion.applyTo(globalTimeline);
 		ProjectUtils.printTimeline(globalTimeline);
 
 		// Then try to filter only phenomena when both cities are in range
@@ -570,9 +583,9 @@ public class PatriusTuto {
 		// Print the timeline after filtering to check that only the "and events" are
 		// left. Careful : the code used when building the ElementTypeFilter should be the 
 		// same as the one used to build the AndCriterion
-		final ElementTypeFilter filter = // your code here
+		final ElementTypeFilter filter = new ElementTypeFilter("TOULOUSE_AND_PARIS", false);
 		// Apply the ElementTypeFilter to the global Timeline
-		// your code here
+		filter.applyTo(globalTimeline);
 		ProjectUtils.printTimeline(globalTimeline);
 
 		/**
@@ -609,10 +622,10 @@ public class PatriusTuto {
 		// Here you can execute any static method of the PatriusTuto class
 		// Simply comment/uncomment the method you want to execute.
 		tuto1TimeScales();
-		// tuto2Frames();
-		// tuto3KeplerianPropagation();
-		// tuto4EphemerisProduction();
-		// tuto5EventDetection();
+		tuto2Frames();
+		tuto3KeplerianPropagation();
+		tuto4EphemerisProduction();
+		tuto5EventDetection();
 	}
 
 }
