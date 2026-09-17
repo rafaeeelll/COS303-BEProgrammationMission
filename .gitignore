@@ -1,0 +1,19 @@
+# Eclipse workspace metadata
+.metadata/
+.sonarlint/
+
+# Java/Eclipse build output
+BEProgrammationMission/bin/
+
+# Course-provided binary dependencies (obtain from the LMS archive)
+BEProgrammationMission/jars/
+
+# Generated mission outputs
+BEProgrammationMission/logs/
+BEProgrammationMission/accesses/
+
+# macOS files
+.DS_Store
+
+# Local VTS installation and generated data
+Vts-WindowsNT-32bits-3.5.1/
