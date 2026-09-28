@@ -3,12 +3,16 @@ package progmission;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
 import org.slf4j.Logger;
 
+import fr.cnes.sirius.patrius.assembly.models.SensorModel;
 import fr.cnes.sirius.patrius.attitudes.Attitude;
 import fr.cnes.sirius.patrius.attitudes.AttitudeLaw;
 import fr.cnes.sirius.patrius.attitudes.AttitudeLawLeg;
@@ -25,8 +29,13 @@ import fr.cnes.sirius.patrius.events.postprocessing.ElementTypeFilter;
 import fr.cnes.sirius.patrius.events.postprocessing.Timeline;
 import fr.cnes.sirius.patrius.events.sensor.SensorVisibilityDetector;
 import fr.cnes.sirius.patrius.frames.FramesFactory;
+import fr.cnes.sirius.patrius.frames.TopocentricFrame;
+import fr.cnes.sirius.patrius.math.geometry.euclidean.threed.Vector3D;
+import fr.cnes.sirius.patrius.math.util.FastMath;
 import fr.cnes.sirius.patrius.propagation.analytical.KeplerianPropagator;
+import fr.cnes.sirius.patrius.propagation.events.ConstantRadiusProvider;
 import fr.cnes.sirius.patrius.propagation.events.EventDetector;
+import fr.cnes.sirius.patrius.propagation.events.ThreeBodiesAngleDetector;
 import fr.cnes.sirius.patrius.time.AbsoluteDate;
 import fr.cnes.sirius.patrius.time.AbsoluteDateInterval;
 import fr.cnes.sirius.patrius.time.AbsoluteDateIntervalsList;
@@ -42,6 +51,25 @@ import utils.ProjectUtils;
  * @author herberl
  */
 public class CompleteMission extends SimpleMission {
+
+	private static final String VISIBILITY_CODE = "VISIBILITY";
+	private static final String SUN_INCIDENCE_CODE = "SUN_INCIDENCE";
+	private static final String PHASE_ANGLE_CODE = "PHASE_ANGLE";
+	private static final String VISIBILITY_AND_SUN_CODE = "VISIBILITY_AND_SUN";
+	private static final String ACCESS_CODE = "SITE_ACCESS";
+
+	/** One feasible observation interval and its estimated contribution to score. */
+	private static final class ObservationCandidate {
+		private final Site site;
+		private final AttitudeLawLeg leg;
+		private final double score;
+
+		private ObservationCandidate(final Site site, final AttitudeLawLeg leg, final double score) {
+			this.site = site;
+			this.leg = leg;
+			this.score = score;
+		}
+	}
 
 	/**
 	 * Maximum checking interval (s) for the event detection during the orbit
@@ -203,6 +231,7 @@ public class CompleteMission extends SimpleMission {
 		// We create a Map containing all the loggers for each Site's constraint, that
 		// we be used to optimize propagation
 		final Map<Site, ArrayList<CodedEventsLogger>> sitesEventsLoggers = new HashMap<>();
+		final KeplerianPropagator propagator = this.createDefaultPropagator();
 
 		for (final Site targetSite : this.getSiteList()) {
 			logger.info(" Site : " + targetSite.getName());
@@ -221,7 +250,7 @@ public class CompleteMission extends SimpleMission {
 			boolean loaded = false;
 
 			// If the file exist for the current Site, we try to load its content
-			if (file.exists()) {
+			if (false) { // Intentionally bypass legacy serialized timelines.
 				try {
 					// Load the timeline from the file and add it to the accessPlan
 					final Timeline siteAccessTimeline = loadSiteAccessTimeline(filename);
@@ -248,9 +277,9 @@ public class CompleteMission extends SimpleMission {
 				// Create one logger per constraint, by completing and adapting
 				// createSiteXConstraintLogger for each constraint, and add all
 				// loggers to the loggers List for this Site
-				siteLoggers.add(createSiteXConstraintLogger(targetSite)); // visibility
-				siteLoggers.add(createSiteXConstraintLogger(targetSite)); // sun incidence
-				siteLoggers.add(createSiteXConstraintLogger(targetSite)); // dazzling
+				siteLoggers.add(createVisibilityLogger(targetSite, propagator));
+				siteLoggers.add(createSunIncidenceLogger(targetSite, propagator));
+				siteLoggers.add(createPhaseAngleLogger(targetSite, propagator));
 				// For example : createSiteXConstraintLogger => createVisibilityConstraintLogger
 
 				// Finally, store the Site's loggers in the global Map
@@ -265,7 +294,7 @@ public class CompleteMission extends SimpleMission {
 
 		// Now that every detector and logger has been added to the propagator for all
 		// Sites, we can propagate the Orbit for all Sites at once
-		this.getSatellite().getPropagator().propagate(this.getStartDate(), this.getEndDate());
+		propagator.propagate(this.getStartDate(), this.getEndDate());
 
 		/**
 		 * Step 3 - After the propagation, we can create all non-existing Timelines and
@@ -284,17 +313,51 @@ public class CompleteMission extends SimpleMission {
 					eventsLoggersList.get(1), eventsLoggersList.get(2));
 			this.accessPlan.put(site, siteAccessTimeline);
 
-			final String filename = generateSerializationName(site, HASH_CONSTANT_BE);
-			try {
-				// Serialize the timeline for later reading
-				serializeSiteAccessTimeline(filename, siteAccessTimeline);
-				logger.info(filename + " has been serialized successfully !");
-			} catch (IOException e) {
-				logger.warn(filename + " could not be serialized !");
-				logger.warn(e.getMessage());
-			}
+			logger.info("Access windows for " + site.getName() + ": "
+					+ siteAccessTimeline.getPhenomenaList().size());
 		}
 		return this.accessPlan;
+	}
+
+	/** Creates the visibility timeline logger for one site. */
+	private CodedEventsLogger createVisibilityLogger(final Site site, final KeplerianPropagator propagator) {
+		final TopocentricFrame siteFrame = new TopocentricFrame(this.getEarth(), site.getPoint(), site.getName());
+		final SensorModel sensor = new SensorModel(this.getSatellite().getAssembly(), Satellite.SENSOR_NAME);
+		sensor.setMainTarget(siteFrame, new ConstantRadiusProvider(0.0));
+		sensor.addMaskingCelestialBody(this.getEarth());
+		final EventDetector detector = new SensorVisibilityDetector(sensor, MAXCHECK_EVENTS, TRESHOLD_EVENTS,
+				EventDetector.Action.CONTINUE, EventDetector.Action.CONTINUE);
+		return monitor(detector, true, "VISIBILITY_START", "VISIBILITY_END", VISIBILITY_CODE, propagator);
+	}
+
+	/** Creates the local solar-incidence logger. g >= 0 means incidence <= limit. */
+	private CodedEventsLogger createSunIncidenceLogger(final Site site, final KeplerianPropagator propagator) {
+		final TopocentricFrame siteFrame = new TopocentricFrame(this.getEarth(), site.getPoint(), site.getName());
+		final double allowedAngle = FastMath.PI - FastMath.toRadians(ConstantsBE.MAX_SUN_INCIDENCE_ANGLE);
+		final EventDetector detector = new ThreeBodiesAngleDetector(this.getEarth(), siteFrame, this.getSun(),
+				allowedAngle, MAXCHECK_EVENTS, TRESHOLD_EVENTS, EventDetector.Action.CONTINUE);
+		return monitor(detector, true, "SUN_INCIDENCE_START", "SUN_INCIDENCE_END", SUN_INCIDENCE_CODE,
+				propagator);
+	}
+
+	/** Creates the target-satellite-Sun phase-angle logger. */
+	private CodedEventsLogger createPhaseAngleLogger(final Site site, final KeplerianPropagator propagator) {
+		final TopocentricFrame siteFrame = new TopocentricFrame(this.getEarth(), site.getPoint(), site.getName());
+		final EventDetector detector = new ThreeBodiesAngleDetector(null, siteFrame, this.getSun(),
+				FastMath.toRadians(ConstantsBE.MAX_SUN_PHASE_ANGLE), MAXCHECK_EVENTS, TRESHOLD_EVENTS,
+				EventDetector.Action.CONTINUE);
+		return monitor(detector, false, "PHASE_ANGLE_END", "PHASE_ANGLE_START", PHASE_ANGLE_CODE, propagator);
+	}
+
+	/** Wraps a detector in coded events and attaches it to the mission propagator. */
+	private CodedEventsLogger monitor(final EventDetector detector, final boolean increasingStarts,
+			final String increasingCode, final String decreasingCode, final String phenomenonCode,
+			final KeplerianPropagator propagator) {
+		final GenericCodingEventDetector coded = new GenericCodingEventDetector(detector, increasingCode,
+				decreasingCode, increasingStarts, phenomenonCode);
+		final CodedEventsLogger logger = new CodedEventsLogger();
+		propagator.addEventDetector(logger.monitorDetector(coded));
+		return logger;
 	}
 
 	/**
@@ -317,6 +380,9 @@ public class CompleteMission extends SimpleMission {
 	 * @throws PatriusException
 	 */
 	public StrictAttitudeLegsSequence<AttitudeLeg> computeCinematicPlan() throws PatriusException {
+		if (this.observationPlan != null) {
+			return computeCinematicPlanLevel2();
+		}
 
 		/**
 		 * Now we want to assemble a continuous attitude law which is valid during all
@@ -435,6 +501,9 @@ public class CompleteMission extends SimpleMission {
 	 *                          computations
 	 */
 	public Map<Site, AttitudeLawLeg> computeObservationPlan() throws PatriusException {
+		if (this.getSiteList().size() > 0) {
+			return computeObservationPlanLevel2();
+		}
 		/**
 		 * Here are the big constraints and informations you need to build an
 		 * observation plan.
@@ -655,7 +724,13 @@ public class CompleteMission extends SimpleMission {
 		 * Create your detector and return it.
 		 */
 
-		return null;
+		final Site site = this.getSiteList().get(0);
+		final SensorModel sensor = new SensorModel(this.getSatellite().getAssembly(), Satellite.SENSOR_NAME);
+		final TopocentricFrame target = new TopocentricFrame(this.getEarth(), site.getPoint(), site.getName());
+		sensor.setMainTarget(target, new ConstantRadiusProvider(0.0));
+		sensor.addMaskingCelestialBody(this.getEarth());
+		return new SensorVisibilityDetector(sensor, MAXCHECK_EVENTS, TRESHOLD_EVENTS,
+				EventDetector.Action.CONTINUE, EventDetector.Action.CONTINUE);
 	}
 
 	/**
@@ -693,7 +768,165 @@ public class CompleteMission extends SimpleMission {
 		/*
 		 * Complete the code below to create your observation law and return it
 		 */
-		return null;
+		return new fr.cnes.sirius.patrius.attitudes.TargetGroundPointing(this.getEarth(), target.getPoint(),
+				this.getSatellite().getSensorAxis(), this.getSatellite().getFrameXAxis());
+	}
+
+	/** Selects one 10-second observation per site with the level-2 slew margin. */
+	private Map<Site, AttitudeLawLeg> computeObservationPlanLevel2() throws PatriusException {
+		logger.info("============= Computing Observation Plan (level 2) =============");
+		this.observationPlan.clear();
+		if (this.accessPlan.isEmpty()) {
+			this.computeAccessPlan();
+		}
+
+		final List<ObservationCandidate> candidates = new ArrayList<>();
+		for (final Entry<Site, Timeline> entry : this.accessPlan.entrySet()) {
+			final Site site = entry.getKey();
+			final AttitudeLaw law = this.createObservationLaw(site);
+			for (final Phenomenon access : entry.getValue().getPhenomenaList()) {
+				final AbsoluteDateInterval window = access.getTimespan();
+				if (window.getDuration() + 1.0e-9 < ConstantsBE.INTEGRATION_TIME) {
+					continue;
+				}
+				final AbsoluteDate middle = window.getMiddleDate();
+				final AbsoluteDate obsStart = middle.shiftedBy(-ConstantsBE.INTEGRATION_TIME / 2.0);
+				final AbsoluteDate obsEnd = obsStart.shiftedBy(ConstantsBE.INTEGRATION_TIME);
+				if (!window.contains(obsStart) || !window.contains(obsEnd)) {
+					continue;
+				}
+				final AttitudeLawLeg leg = new AttitudeLawLeg(law, obsStart, obsEnd, "OBS_" + site.getName());
+				final double contribution = this.computeFinalScore(java.util.Collections.singletonMap(site, leg));
+				candidates.add(new ObservationCandidate(site, leg, contribution));
+			}
+		}
+
+		// Highest estimated contribution first; ties are resolved deterministically.
+		Collections.sort(candidates, new Comparator<ObservationCandidate>() {
+			@Override
+			public int compare(final ObservationCandidate left, final ObservationCandidate right) {
+				final int byScore = Double.compare(right.score, left.score);
+				if (byScore != 0) {
+					return byScore;
+				}
+				final int byDate = left.leg.getDate().compareTo(right.leg.getDate());
+				return byDate != 0 ? byDate : left.site.getName().compareTo(right.site.getName());
+			}
+		});
+
+		final List<ObservationCandidate> selected = new ArrayList<>();
+		final double slewMargin = this.getSatellite().getMaxSlewDuration();
+		for (final ObservationCandidate candidate : candidates) {
+			if (this.observationPlan.containsKey(candidate.site)) {
+				continue;
+			}
+			final AbsoluteDate obsStart = candidate.leg.getDate();
+			final AbsoluteDate obsEnd = candidate.leg.getEnd();
+			if (obsStart.durationFrom(this.getStartDate()) < slewMargin
+					|| this.getEndDate().durationFrom(obsEnd) < slewMargin) {
+				continue;
+			}
+
+			int insertion = 0;
+			while (insertion < selected.size()
+					&& selected.get(insertion).leg.getDate().compareTo(obsStart) < 0) {
+				insertion++;
+			}
+			final boolean hasPrevious = insertion > 0;
+			final boolean hasNext = insertion < selected.size();
+			if (hasPrevious && obsStart.durationFrom(selected.get(insertion - 1).leg.getEnd()) < slewMargin) {
+				continue;
+			}
+			if (hasNext && selected.get(insertion).leg.getDate().durationFrom(obsEnd) < slewMargin) {
+				continue;
+			}
+			selected.add(insertion, candidate);
+			this.observationPlan.put(candidate.site, candidate.leg);
+		}
+
+		for (final ObservationCandidate candidate : selected) {
+			logger.info("Observation " + candidate.site.getName() + " : " + candidate.leg.getDate() + " -> "
+					+ candidate.leg.getEnd() + " (contribution estimée=" + candidate.score + ")");
+		}
+		logger.info("Observations retained : " + this.observationPlan.size());
+		return this.observationPlan;
+	}
+
+	/** Builds a continuous nadir/observation/slew sequence over the mission horizon. */
+	private StrictAttitudeLegsSequence<AttitudeLeg> computeCinematicPlanLevel2() throws PatriusException {
+		logger.info("============= Computing Cinematic Plan (level 2) =============");
+		this.cinematicPlan.clear();
+		final AttitudeLaw nadir = this.getSatellite().getDefaultAttitudeLaw();
+		final AbsoluteDate missionStart = this.getStartDate();
+		final AbsoluteDate missionEnd = this.getEndDate();
+		final KeplerianPropagator propagator = this.createDefaultPropagator();
+		final List<Entry<Site, AttitudeLawLeg>> observations = new ArrayList<>(this.observationPlan.entrySet());
+		Collections.sort(observations, new Comparator<Entry<Site, AttitudeLawLeg>>() {
+			@Override
+			public int compare(final Entry<Site, AttitudeLawLeg> left, final Entry<Site, AttitudeLawLeg> right) {
+				return left.getValue().getDate().compareTo(right.getValue().getDate());
+			}
+		});
+
+		if (observations.isEmpty()) {
+			this.cinematicPlan.add(new AttitudeLawLeg(nadir, missionStart, missionEnd, "NADIR_MISSION"));
+			return this.cinematicPlan;
+		}
+
+		final double maxSlew = this.getSatellite().getMaxSlewDuration();
+		final Entry<Site, AttitudeLawLeg> first = observations.get(0);
+		final AbsoluteDate firstStart = first.getValue().getDate();
+		final AbsoluteDate firstSlewStart = firstStart.shiftedBy(-maxSlew);
+		if (firstSlewStart.compareTo(missionStart) > 0) {
+			this.cinematicPlan.add(new AttitudeLawLeg(nadir, missionStart, firstSlewStart,
+					"NADIR_BEFORE_" + first.getKey().getName()));
+		}
+		final Attitude initialNadir = nadir.getAttitude(propagator, firstSlewStart, this.getEme2000());
+		final Attitude firstObservation = first.getValue().getAttitude(propagator, firstStart, this.getEme2000());
+		this.cinematicPlan.add(new ConstantSpinSlew(initialNadir, firstObservation, maxSlew,
+				"SLEW_NADIR_TO_" + first.getKey().getName()));
+		this.cinematicPlan.add(first.getValue());
+
+		Entry<Site, AttitudeLawLeg> previous = first;
+		for (int index = 1; index < observations.size(); index++) {
+			final Entry<Site, AttitudeLawLeg> next = observations.get(index);
+			final AbsoluteDate previousEnd = previous.getValue().getEnd();
+			final AbsoluteDate nextStart = next.getValue().getDate();
+			final double gap = nextStart.durationFrom(previousEnd);
+			final Attitude previousAttitude = previous.getValue().getAttitude(propagator, previousEnd,
+					this.getEme2000());
+			final Attitude nextAttitude = next.getValue().getAttitude(propagator, nextStart, this.getEme2000());
+
+			if (gap > 2.0 * maxSlew) {
+				final AbsoluteDate firstNadirDate = previousEnd.shiftedBy(maxSlew);
+				final AbsoluteDate secondSlewDate = nextStart.shiftedBy(-maxSlew);
+				final Attitude firstNadir = nadir.getAttitude(propagator, firstNadirDate, this.getEme2000());
+				final Attitude secondNadir = nadir.getAttitude(propagator, secondSlewDate, this.getEme2000());
+				this.cinematicPlan.add(new ConstantSpinSlew(previousAttitude, firstNadir, maxSlew,
+						"SLEW_" + previous.getKey().getName() + "_TO_NADIR"));
+				this.cinematicPlan.add(new AttitudeLawLeg(nadir, firstNadirDate, secondSlewDate,
+						"NADIR_BETWEEN_" + previous.getKey().getName() + "_AND_" + next.getKey().getName()));
+				this.cinematicPlan.add(new ConstantSpinSlew(secondNadir, nextAttitude, maxSlew,
+						"SLEW_NADIR_TO_" + next.getKey().getName()));
+			} else {
+				this.cinematicPlan.add(new ConstantSpinSlew(previousAttitude, nextAttitude, gap,
+						"SLEW_" + previous.getKey().getName() + "_TO_" + next.getKey().getName()));
+			}
+			this.cinematicPlan.add(next.getValue());
+			previous = next;
+		}
+
+		final AbsoluteDate lastEnd = previous.getValue().getEnd();
+		final AbsoluteDate lastSlewEnd = lastEnd.shiftedBy(maxSlew);
+		final Attitude lastObservation = previous.getValue().getAttitude(propagator, lastEnd, this.getEme2000());
+		final Attitude finalNadir = nadir.getAttitude(propagator, lastSlewEnd, this.getEme2000());
+		this.cinematicPlan.add(new ConstantSpinSlew(lastObservation, finalNadir, maxSlew,
+				"SLEW_" + previous.getKey().getName() + "_TO_NADIR"));
+		if (lastSlewEnd.compareTo(missionEnd) < 0) {
+			this.cinematicPlan.add(new AttitudeLawLeg(nadir, lastSlewEnd, missionEnd,
+					"NADIR_AFTER_" + previous.getKey().getName()));
+		}
+		return this.cinematicPlan;
 	}
 
 	/**
@@ -766,14 +999,16 @@ public class CompleteMission extends SimpleMission {
 		 */
 		// Define and use your own criteria, here is an example (use the right strings
 		// defined when naming the phenomenon in the GenericCodingEventDetector)
-		final AndCriterion andCriterion = new AndCriterion("Name of the X1 phenomenon", "Name of the X2 phenomenon",
-				"Name of the X1 AND X2 phenomenon", "Comment about this phenomenon");
-		// Applying our criterion adds all the new phenonmena inside the global timeline
-		andCriterion.applyTo(siteAccessTimeline);
+		final AndCriterion visibilityAndSun = new AndCriterion(VISIBILITY_CODE, SUN_INCIDENCE_CODE,
+				VISIBILITY_AND_SUN_CODE, "Visible and sufficiently illuminated target");
+		visibilityAndSun.applyTo(siteAccessTimeline);
+		final AndCriterion allConstraints = new AndCriterion(VISIBILITY_AND_SUN_CODE, PHASE_ANGLE_CODE,
+				ACCESS_CODE, "Visible, illuminated and phase-angle-safe access");
+		allConstraints.applyTo(siteAccessTimeline);
 
 		// Then create an ElementTypeFilter that will filter all phenomenon not
 		// respecting the input condition you gave it
-		final ElementTypeFilter obsConditionFilter = new ElementTypeFilter("Name of the X1 AND X2 phenomenon", false);
+		final ElementTypeFilter obsConditionFilter = new ElementTypeFilter(ACCESS_CODE, false);
 		// Finally, we filter the global timeline to keep only X1 AND X2 phenomena
 		obsConditionFilter.applyTo(siteAccessTimeline);
 

@@ -500,9 +500,11 @@ public class PatriusTuto {
 		// phenomenonCodeIn is the name of the phenomenon formed by the 2 events
 		// [start_event => end_event].
 		// Here the events are linked with the distance between the target (Toulouse) and
-		// the satellite represented by the propagator 
+		// the satellite represented by the propagator
+		// DistanceDetector.g = distance - targetDistance: entering range makes g decrease,
+		// so the decreasing event is the start of the range phenomenon.
 		final GenericCodingEventDetector codingEventDetectorToulouse = new GenericCodingEventDetector(
-				distanceDetectorToulouse, "TOULOUSE_IN", "TOULOUSE_OUT", true, "TOULOUSE_RANGE");
+				distanceDetectorToulouse, "TOULOUSE_OUT", "TOULOUSE_IN", false, "TOULOUSE_RANGE");
 
 		// Create a CodedEventsLogger using the simple constructor
 		final CodedEventsLogger eventLoggerToulouse = new CodedEventsLogger();
@@ -530,9 +532,10 @@ public class PatriusTuto {
 				targetDistance, maxcheck, treshold, Action.CONTINUE);
 		// Add the detector to the propagator
 		propagator.addEventDetector(distanceDetectorParis);
+		// Apply the same convention: decreasing g means entering the Paris range.
 		// Then create a GenericCodingEventDetector to log the events detected
 		final GenericCodingEventDetector codingEventDetectorParis = new GenericCodingEventDetector(
-				distanceDetectorParis, "PARIS_IN", "PARIS_OUT", true, "PARIS_RANGE");
+				distanceDetectorParis, "PARIS_OUT", "PARIS_IN", false, "PARIS_RANGE");
 		final CodedEventsLogger eventLoggerParis = new CodedEventsLogger();
 		final EventDetector eventLoggingDetectorParis = eventLoggerParis.monitorDetector(codingEventDetectorParis);
 		// And add the EventDetector for logging to the propagator 
